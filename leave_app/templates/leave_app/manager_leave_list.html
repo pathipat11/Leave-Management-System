@@ -7,6 +7,7 @@
   แสดงเฉพาะคำขอของลูกน้องที่อยู่ภายใต้คุณ และยังอยู่ในสถานะ Pending
 </p>
 
+<!-- 🔹 ตารางคำขอที่รออนุมัติ -->
 <table class="w-full text-sm rounded-2xl border border-slate-100 bg-white/80 shadow-sm overflow-hidden dark:border-slate-800 dark:bg-slate-900/70 ">
   <thead class="bg-slate-50 text-slate-700 dark:bg-slate-800/70 dark:text-slate-100">
     <tr>
@@ -18,13 +19,18 @@
     </tr>
   </thead>
   <tbody>
-    {% for leave in leaves %}
+    {% for leave in pending_leaves %}
     <tr class="border-t border-slate-100 dark:border-slate-800">
       <td class="py-2 px-3">
         {{ leave.employee.user.get_full_name|default:leave.employee.user.username }}
       </td>
       <td class="px-3">{{ leave.leave_type.name }}</td>
-      <td class="px-3">{{ leave.start_date }} - {{ leave.end_date }}</td>
+      <td class="px-3">
+        {{ leave.start_date }} - {{ leave.end_date }}
+        {% if leave.half_day %}
+          <span class="ml-1 text-xs text-indigo-600 dark:text-indigo-400">(ครึ่งวัน)</span>
+        {% endif %}
+      </td>
       <td class="px-3 truncate max-w-xs">
         {{ leave.reason|truncatechars:50 }}
       </td>
@@ -39,6 +45,76 @@
     <tr>
       <td colspan="5" class="py-3 text-center text-slate-500 dark:text-slate-400">
         ยังไม่มีคำขอที่รออนุมัติ
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- 🔹 ประวัติคำขอลาของลูกน้อง -->
+<h2 class="mt-8 mb-2 text-xl font-semibold tracking-tight">
+  ประวัติคำขอลา
+</h2>
+<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
+  แสดงคำขอของลูกน้องที่ถูกอนุมัติ / ปฏิเสธ / ยกเลิก แล้ว
+</p>
+
+<table class="w-full text-sm rounded-2xl border border-slate-100 bg-white/80 shadow-sm overflow-hidden dark:border-slate-800 dark:bg-slate-900/70 ">
+  <thead class="bg-slate-50 text-slate-700 dark:bg-slate-800/70 dark:text-slate-100">
+    <tr>
+      <th class="text-left py-2 px-3">พนักงาน</th>
+      <th class="text-left px-3">ประเภท</th>
+      <th class="text-left px-3">ช่วงเวลา</th>
+      <th class="text-left px-3">สถานะ</th>
+      <th class="text-left px-3">ผู้พิจารณา</th>
+      <th class="text-left px-3">อัปเดตล่าสุด</th>
+      <th class="text-left px-3">หมายเหตุหัวหน้า</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for leave in history_leaves %}
+    <tr class="border-t border-slate-100 dark:border-slate-800">
+      <td class="py-2 px-3">
+        {{ leave.employee.user.get_full_name|default:leave.employee.user.username }}
+      </td>
+      <td class="px-3">{{ leave.leave_type.name }}</td>
+      <td class="px-3">
+        {{ leave.start_date }} - {{ leave.end_date }}
+        {% if leave.half_day %}
+          <span class="ml-1 text-xs text-indigo-600 dark:text-indigo-400">(ครึ่งวัน)</span>
+        {% endif %}
+      </td>
+      <td class="px-3">
+        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+          {% if leave.status == 'APPROVED' %}
+            bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200
+          {% elif leave.status == 'REJECTED' %}
+            bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200
+          {% elif leave.status == 'CANCELLED' %}
+            bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-100
+          {% endif %}
+        ">
+          {{ leave.get_status_display }}
+        </span>
+      </td>
+      <td class="px-3">
+        {% if leave.approver %}
+          {{ leave.approver.get_full_name|default:leave.approver.username }}
+        {% else %}
+          -
+        {% endif %}
+      </td>
+      <td class="px-3">
+        {{ leave.updated_at|date:"Y-m-d H:i" }}
+      </td>
+      <td class="px-3 truncate max-w-xs">
+        {{ leave.approve_comment|default:"-"|truncatechars:50 }}
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="7" class="py-3 text-center text-slate-500 dark:text-slate-400">
+        ยังไม่มีประวัติคำขอลา
       </td>
     </tr>
     {% endfor %}

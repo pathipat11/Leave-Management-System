@@ -56,11 +56,21 @@ def register(request):
 def dashboard(request):
     profile = get_object_or_404(EmployeeProfile, user=request.user)
     recent_leaves = LeaveRequest.objects.filter(employee=profile)[:5]
+
+    current_year = timezone.now().year
+    balances = LeaveBalance.objects.filter(
+        employee=profile,
+        year=current_year,
+    ).select_related("leave_type")
+
     context = {
         "profile": profile,
         "recent_leaves": recent_leaves,
+        "balances": balances,
+        "current_year": current_year,
     }
     return render(request, "leave_app/dashboard.html", context)
+
 
 
 @login_required
@@ -128,15 +138,27 @@ def is_ceo(user):
 def manager_leave_list(request):
     subordinates = EmployeeProfile.objects.filter(manager=request.user)
 
-    leaves = LeaveRequest.objects.filter(
+    # คำขอที่ยัง Pending (รออนุมัติ)
+    pending_leaves = LeaveRequest.objects.filter(
         employee__in=subordinates,
         status=LeaveRequest.STATUS_PENDING,
     ).select_related("employee", "leave_type")
 
+    # ประวัติคำขอลา (ทุกสถานะ ยกเว้น Pending)
+    history_leaves = LeaveRequest.objects.filter(
+        employee__in=subordinates,
+    ).exclude(
+        status=LeaveRequest.STATUS_PENDING,
+    ).select_related(
+        "employee", "leave_type", "approver"
+    ).order_by("-updated_at")
+
     context = {
-        "leaves": leaves,
+        "pending_leaves": pending_leaves,
+        "history_leaves": history_leaves,
     }
     return render(request, "leave_app/manager_leave_list.html", context)
+
 
 
 @user_passes_test(is_manager)

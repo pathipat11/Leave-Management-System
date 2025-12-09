@@ -20,19 +20,43 @@ def calculate_working_days(start_date, end_date, half_day=False):
         current += timedelta(days=1)
     return days
 
+def calculate_working_days_by_year(start_date, end_date, half_day=False):
+    """
+    คืน dict {year: จำนวนวันลาในปีนั้น} โดย
+    - ตัดเสาร์-อาทิตย์
+    - ตัด Holiday
+    - ถ้า half_day == True ต้องเป็นวันเดียวกัน และให้ 0.5 วัน
+    """
+    if half_day:
+        if start_date != end_date:
+            raise ValidationError("ถ้าลาครึ่งวันต้องเป็นวันเดียวกันทั้งวันเริ่มและสิ้นสุด")
+        return {start_date.year: 0.5}
+
+    days_by_year = {}
+    current = start_date
+    while current <= end_date:
+        if current.weekday() < 5 and not Holiday.objects.filter(date=current).exists():
+            year = current.year
+            days_by_year.setdefault(year, 0)
+            days_by_year[year] += 1
+        current += timedelta(days=1)
+    return days_by_year
+
 
 def validate_leave_request(employee_profile, leave_type, start_date, end_date, half_day=False):
+    # 1) เช็กช่วงวันที่
     if end_date < start_date:
         raise ValidationError("End date must be after start date.")
 
+    # (ถ้าไม่อยากห้ามย้อนหลัง comment บรรทัดนี้ทิ้งได้)
     if start_date < timezone.now().date():
         raise ValidationError("Cannot request leave in the past.")
 
-    # ✅ เช็คว่าประเภทนี้อนุญาตให้ลาครึ่งวันไหม
+    # 2) ประเภทนี้รองรับครึ่งวันไหม
     if half_day and not leave_type.allow_half_day:
         raise ValidationError("ประเภทการลานี้ไม่สามารถลาครึ่งวันได้")
 
-    # เช็คซ้อนช่วง
+    # 3) เช็กซ้อนช่วงลาเดิม (pending / approved)
     overlap = LeaveRequest.objects.filter(
         employee=employee_profile,
         status__in=[LeaveRequest.STATUS_PENDING, LeaveRequest.STATUS_APPROVED],
@@ -42,26 +66,36 @@ def validate_leave_request(employee_profile, leave_type, start_date, end_date, h
     if overlap:
         raise ValidationError("Leave request overlaps with existing leave.")
 
-    days = calculate_working_days(start_date, end_date, half_day)
-    current_year = start_date.year
+    # 4) คำนวณจำนวนวันลา (แยกตามปี)
+    days_by_year = calculate_working_days_by_year(start_date, end_date, half_day)
 
-    # ✅ ถ้าเป็นประเภทลาแบบไม่จ่ายเงิน (UNPAID) จะไม่เช็กโควตา
+    # 5) ถ้าเป็นลาแบบไม่จ่ายเงิน (UNPAID) ไม่ต้องเช็กโควต้า
     if not leave_type.is_paid:
-        return days  # ไม่ต้องมี LeaveBalance ก็ได้
+        # คืนจำนวนวันรวม (ใช้ตอนแสดงผลถ้าต้องการ)
+        return sum(days_by_year.values())
 
-    try:
-        balance = LeaveBalance.objects.get(
-            employee=employee_profile,
-            leave_type=leave_type,
-            year=current_year,
-        )
-    except LeaveBalance.DoesNotExist:
-        raise ValidationError("No leave balance for this type/year.")
+    # 6) เช็กโควต้าต่อปี
+    for year, days in days_by_year.items():
+        try:
+            balance = LeaveBalance.objects.get(
+                employee=employee_profile,
+                leave_type=leave_type,
+                year=year,
+            )
+        except LeaveBalance.DoesNotExist:
+            raise ValidationError(
+                f"No leave balance for {leave_type.name} in year {year}."
+            )
 
-    if days > balance.remaining:
-        raise ValidationError("Not enough leave balance.")
+        if days > balance.remaining:
+            raise ValidationError(
+                f"Not enough leave balance for {leave_type.name} in {year}. "
+                f"(remaining {balance.remaining}, requested {days})"
+            )
 
-    return days
+    # จำนวนวันรวมทั้งหมด (ทุกปีรวมกัน)
+    return sum(days_by_year.values())
+
 
 def get_leave_days_for_request(leave_request: LeaveRequest) -> float:
     """
@@ -78,25 +112,39 @@ def approve_leave_request(leave_request: LeaveRequest, approver, comment: str = 
     if leave_request.status != LeaveRequest.STATUS_PENDING:
         raise ValidationError("อนุมัติได้เฉพาะคำขอที่อยู่ในสถานะ Pending เท่านั้น")
 
-    days = get_leave_days_for_request(leave_request)
-    year = leave_request.start_date.year
+    # validate อีกครั้ง กันกรณีโควต้า/ข้อมูลมีการเปลี่ยนระหว่างรออนุมัติ
+    validate_leave_request(
+        leave_request.employee,
+        leave_request.leave_type,
+        leave_request.start_date,
+        leave_request.end_date,
+        leave_request.half_day,
+    )
 
-    # ✅ ถ้าไม่จ่ายเงิน (UNPAID) ไม่ต้องยุ่งกับ LeaveBalance
+    # คำนวณวันลาต่อปี (ใช้ฟังก์ชันใหม่)
+    days_by_year = calculate_working_days_by_year(
+        leave_request.start_date,
+        leave_request.end_date,
+        leave_request.half_day,
+    )
+
+    # ลาแบบไม่จ่ายเงิน → ไม่ยุ่งกับ LeaveBalance
     if leave_request.leave_type.is_paid:
-        try:
-            balance = LeaveBalance.objects.get(
-                employee=leave_request.employee,
-                leave_type=leave_request.leave_type,
-                year=year,
-            )
-        except LeaveBalance.DoesNotExist:
-            raise ValidationError("ไม่พบ LeaveBalance สำหรับคำขอนี้")
+        for year, days in days_by_year.items():
+            try:
+                balance = LeaveBalance.objects.get(
+                    employee=leave_request.employee,
+                    leave_type=leave_request.leave_type,
+                    year=year,
+                )
+            except LeaveBalance.DoesNotExist:
+                raise ValidationError("ไม่พบ LeaveBalance สำหรับคำขอนี้")
 
-        if days > balance.remaining:
-            raise ValidationError("โควต้าวันลาไม่เพียงพอ")
+            if days > balance.remaining:
+                raise ValidationError("โควต้าวันลาไม่เพียงพอ")
 
-        balance.used += days
-        balance.save()
+            balance.used += days
+            balance.save()
 
     # อัปเดตสถานะคำขอ
     leave_request.status = LeaveRequest.STATUS_APPROVED
