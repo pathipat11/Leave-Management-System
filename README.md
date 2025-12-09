@@ -147,10 +147,12 @@ source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-### 4. Create `.env`
+### 4. Environment variables
+
+Create a `.env` file in the project root:
 
 ```env
-SECRET_KEY=your_secret_key
+SECRET_KEY=your-secret-key
 DEBUG=True
 
 DB_NAME=leave_mgmt
@@ -163,8 +165,7 @@ EMAIL_HOST_USER=your_email@gmail.com
 EMAIL_HOST_PASSWORD=your_gmail_app_password
 ```
 
-> ⚠️ Gmail requires **App Password**, not your normal password
-
+> ⚠️ For Gmail, you **must use an App Password**, not your normal email password.
 ---
 
 ## 🗄 Database Setup
@@ -198,6 +199,56 @@ python manage.py dumpdata leave_app.Department leave_app.LeaveType \
 ```bash
 python manage.py loaddata leave_app/fixtures/initial_data.json
 ```
+
+---
+
+## 🚀 Run Development Server
+
+```bash
+python manage.py runserver
+```
+
+Open: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+---
+
+## 🎨 Frontend Styling (Tailwind CSS)
+
+This project uses **Tailwind CSS** for styling the UI.
+
+Tailwind is applied directly inside Django templates using utility classes.
+No Node.js or build pipeline is required.
+
+### Setup
+
+Tailwind CSS is loaded via **CDN** and included in the base template.
+
+Example (`base.html`):
+
+```html
+<script src="https://cdn.tailwindcss.com"></script>
+```
+
+This approach is lightweight and ideal for development or small-to-medium projects.
+
+> ⚠️ Note: For large-scale production environments, a build-based Tailwind setup is recommended.
+
+---
+
+## 🔐 Authentication & Roles
+
+Roles are assigned using Django Groups:
+
+* **Employee** (default user)
+* **Manager** (Group: `MANAGER`)
+* **HR** (Group: `HR` or `is_staff`)
+* **CEO** (Group: `CEO`)
+
+Access control is handled via Django decorators such as:
+
+* `@login_required`
+* `@user_passes_test`
+
 
 ---
 
@@ -250,3 +301,7 @@ This project is for educational and internal use.
 You are free to modify and extend it.
 
 ---
+
+## 🙌 Author
+
+Developed by **Pathipat Mattra**
