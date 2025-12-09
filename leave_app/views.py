@@ -8,19 +8,25 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login as auth_login, logout as auth_logout, get_user_model
 from django.forms import modelformset_factory
 from django.urls import reverse
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db.models.functions import TruncMonth
+from zipfile import BadZipFile
+
 from .services import (
     approve_leave_request, reject_leave_request,
     create_default_leave_balances, notify_leave_submitted,
 )
 from .models import EmployeeProfile, LeaveRequest, Department, LeaveType, LeaveBalance
 from django.utils.dateparse import parse_date
-from .forms import LeaveRequestForm, HREmployeeCreateForm, EmployeeImportForm, LeaveBalanceForm
+from .forms import (
+    LeaveRequestForm,
+    HREmployeeCreateForm,
+    HREmployeeUpdateForm,
+    EmployeeImportForm,
+    LeaveBalanceForm,
+)
 import openpyxl, csv, json
 
-
-# Create your views here.
 
 def register(request):
     if request.method == "POST":
@@ -63,6 +69,7 @@ def leave_request_list(request):
     leaves = LeaveRequest.objects.filter(employee=profile)
     return render(request, "leave_app/leave_request_list.html", {"leaves": leaves})
 
+
 @login_required
 def leave_request_create(request):
     profile = get_object_or_404(EmployeeProfile, user=request.user)
@@ -86,7 +93,8 @@ def leave_request_create(request):
 
 def logout_view(request):
     auth_logout(request)
-    return redirect("login") 
+    return redirect("login")
+
 
 @login_required
 def leave_request_cancel(request, pk):
@@ -103,11 +111,14 @@ def leave_request_cancel(request, pk):
     messages.success(request, "ยกเลิกคำขอลาเรียบร้อยแล้ว")
     return redirect("leave_app:leave_request_list")
 
+
 def is_manager(user):
     return user.is_superuser or user.groups.filter(name="MANAGER").exists()
 
+
 def is_hr(user):
     return user.is_superuser or user.is_staff or user.groups.filter(name="HR").exists()
+
 
 def is_ceo(user):
     return user.is_superuser or user.groups.filter(name="CEO").exists()
@@ -115,10 +126,6 @@ def is_ceo(user):
 
 @user_passes_test(is_manager)
 def manager_leave_list(request):
-    """
-    แสดงคำขอลาที่ลูกน้องส่งมาให้หัวหน้าคนนี้
-    """
-    # ทุก EmployeeProfile ที่มี manager = request.user
     subordinates = EmployeeProfile.objects.filter(manager=request.user)
 
     leaves = LeaveRequest.objects.filter(
@@ -134,15 +141,11 @@ def manager_leave_list(request):
 
 @user_passes_test(is_manager)
 def manager_leave_detail(request, pk):
-    """
-    หน้ารายละเอียด + อนุมัติ/ปฏิเสธ
-    """
     leave_req = get_object_or_404(
         LeaveRequest.objects.select_related("employee", "leave_type"),
         pk=pk,
     )
 
-    # กันกรณีหัวหน้าคนอื่นมาเปิดดู
     if leave_req.employee.manager != request.user and not request.user.is_superuser:
         return HttpResponseForbidden("คุณไม่มีสิทธิ์ดูคำขอนี้")
 
@@ -168,6 +171,7 @@ def manager_leave_detail(request, pk):
         "leave": leave_req,
     }
     return render(request, "leave_app/manager_leave_detail.html", context)
+
 
 @user_passes_test(is_hr)
 def hr_leave_dashboard(request):
@@ -195,6 +199,7 @@ def hr_leave_dashboard(request):
     }
     return render(request, "leave_app/hr_leave_dashboard.html", context)
 
+
 User = get_user_model()
 
 
@@ -211,13 +216,11 @@ def hr_employee_create(request):
         if form.is_valid():
             cd = form.cleaned_data
 
-            # สร้าง User
             user = User.objects.create_user(
                 username=cd["username"],
                 password=cd["password"],
             )
 
-            # สร้าง EmployeeProfile
             profile = EmployeeProfile.objects.create(
                 user=user,
                 employee_code=cd["employee_code"],
@@ -225,40 +228,120 @@ def hr_employee_create(request):
                 manager=cd["manager"],
             )
 
-            # สร้าง LeaveBalance อัตโนมัติ
             create_default_leave_balances(profile)
 
             messages.success(request, f"สร้างพนักงาน {profile} เรียบร้อยแล้ว")
-            return redirect("leave_app:hr_leave_dashboard")
+            return redirect("leave_app:hr_employee_list")
     else:
         form = HREmployeeCreateForm()
 
     return render(request, "leave_app/hr_employee_create.html", {"form": form})
 
+
+@user_passes_test(is_hr)
+def hr_employee_list(request):
+    """
+    HR ดูรายชื่อพนักงานทั้งหมด + filter + search
+    """
+    q = request.GET.get("q", "").strip()
+    department_id = request.GET.get("department") or ""
+    status = request.GET.get("status") or "active"  # active / inactive / all
+
+    employees = EmployeeProfile.objects.select_related("user", "department", "manager")
+
+    if q:
+        employees = employees.filter(
+            Q(employee_code__icontains=q)
+            | Q(user__username__icontains=q)
+            | Q(user__first_name__icontains=q)
+            | Q(user__last_name__icontains=q)
+        )
+
+    if department_id:
+        employees = employees.filter(department_id=department_id)
+
+    if status == "active":
+        employees = employees.filter(user__is_active=True)
+    elif status == "inactive":
+        employees = employees.filter(user__is_active=False)
+
+    employees = employees.order_by("employee_code")
+
+    context = {
+        "employees": employees,
+        "departments": Department.objects.all(),
+        "q": q,
+        "filter_department": department_id,
+        "filter_status": status,
+    }
+    return render(request, "leave_app/hr_employee_list.html", context)
+
+
+@user_passes_test(is_hr)
+def hr_employee_edit(request, pk):
+    """
+    HR แก้ไขข้อมูลพนักงาน + ข้อมูล User (ชื่อ, อีเมล, active)
+    """
+    profile = get_object_or_404(
+        EmployeeProfile.objects.select_related("user", "department", "manager"),
+        pk=pk,
+    )
+    user_obj = profile.user
+
+    if request.method == "POST":
+        form = HREmployeeUpdateForm(request.POST, instance=profile)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "อัปเดตข้อมูลพนักงานเรียบร้อยแล้ว")
+            if "stay" in request.POST:
+                return redirect("leave_app:hr_employee_edit", pk=pk)
+            return redirect("leave_app:hr_employee_list")
+    else:
+        form = HREmployeeUpdateForm(instance=profile)
+
+    context = {
+        "profile": profile,
+        "user_obj": user_obj,
+        "form": form,
+    }
+    return render(request, "leave_app/hr_employee_edit.html", context)
+
+
+@user_passes_test(is_hr)
+def hr_employee_toggle_active(request, pk):
+    """
+    HR เปิด/ปิดการใช้งาน User
+    """
+    profile = get_object_or_404(EmployeeProfile.objects.select_related("user"), pk=pk)
+    if request.method == "POST":
+        user = profile.user
+        user.is_active = not user.is_active
+        user.save()
+        status = "เปิดใช้งาน" if user.is_active else "ปิดการใช้งาน"
+        messages.success(request, f"{status}บัญชีผู้ใช้เรียบร้อยแล้ว")
+    return redirect("leave_app:hr_employee_edit", pk=pk)
+
+
 @user_passes_test(is_hr)
 def hr_employee_import(request):
-    """
-    HR import พนักงานจาก Excel (.xlsx)
-
-    รูปแบบคอลัมน์ (แถวที่ 1 เป็นหัวตาราง):
-    A: username
-    B: password
-    C: employee_code
-    D: department_code
-    E: manager_username
-    """
     if request.method == "POST":
         form = EmployeeImportForm(request.POST, request.FILES)
         if form.is_valid():
             file = form.cleaned_data["file"]
-            wb = openpyxl.load_workbook(file)
-            ws = wb.active
+            try:
+                wb = openpyxl.load_workbook(file)
+            except BadZipFile:
+                messages.error(
+                    request,
+                    "ไฟล์นี้ไม่ใช่ Excel .xlsx กรุณาส่งออกเป็น .xlsx แล้วลองใหม่อีกครั้ง"
+                )
+                return redirect("leave_app:hr_employee_import")
 
+            ws = wb.active
             created_count = 0
 
             for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 username, password, employee_code, dept_code, manager_username = row[:5]
-
                 if not username:
                     continue
 
@@ -267,7 +350,6 @@ def hr_employee_import(request):
                     user.set_password(password or username)
                     user.save()
 
-                # หา department จาก code
                 department = None
                 if dept_code:
                     department, _ = Department.objects.get_or_create(
@@ -275,7 +357,6 @@ def hr_employee_import(request):
                         defaults={"name": str(dept_code)},
                     )
 
-                # หา manager จาก username
                 manager = None
                 if manager_username:
                     manager = User.objects.filter(username=str(manager_username)).first()
@@ -289,16 +370,16 @@ def hr_employee_import(request):
                     },
                 )
 
-                # สร้าง LeaveBalance ให้ด้วย
                 create_default_leave_balances(profile)
                 created_count += 1
 
             messages.success(request, f"นำเข้าพนักงานสำเร็จ {created_count} รายการ")
-            return redirect("leave_app:hr_leave_dashboard")
+            return redirect("leave_app:hr_employee_list")
     else:
         form = EmployeeImportForm()
 
     return render(request, "leave_app/hr_employee_import.html", {"form": form})
+
 
 @user_passes_test(is_hr)
 def hr_leave_balance_manage(request):
@@ -309,11 +390,9 @@ def hr_leave_balance_manage(request):
     """
     employees = EmployeeProfile.objects.select_related("user").all()
 
-    # อ่านค่าจาก query string
     year_param = request.GET.get("year")
     employee_id = request.GET.get("employee")
 
-    # default year = ปีปัจจุบัน
     try:
         year = int(year_param) if year_param else timezone.now().year
     except ValueError:
@@ -325,7 +404,6 @@ def hr_leave_balance_manage(request):
     if employee_id:
         selected_employee = get_object_or_404(EmployeeProfile, pk=employee_id)
 
-        # ให้แน่ใจว่ามี LeaveBalance สำหรับ employee + year นี้ครบทุก LeaveType
         create_default_leave_balances(selected_employee, year)
 
         qs = LeaveBalance.objects.filter(
@@ -356,6 +434,7 @@ def hr_leave_balance_manage(request):
     }
     return render(request, "leave_app/hr_leave_balance_manage.html", context)
 
+
 def _get_filtered_leaves(request):
     qs = LeaveRequest.objects.select_related(
         "employee__user",
@@ -385,13 +464,14 @@ def _get_filtered_leaves(request):
 
     return qs
 
+
 @user_passes_test(is_hr)
 def hr_export_leaves_csv(request):
     qs = _get_filtered_leaves(request)
 
     response = HttpResponse(content_type="text/csv")
     filename = f"leave_requests_{timezone.now().date()}.csv"
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
 
     writer = csv.writer(response)
     writer.writerow([
@@ -417,6 +497,7 @@ def hr_export_leaves_csv(request):
         ])
 
     return response
+
 
 @user_passes_test(is_hr)
 def hr_export_leaves_excel(request):
@@ -449,14 +530,14 @@ def hr_export_leaves_excel(request):
             leave.reason,
         ])
 
-    from django.http import HttpResponse
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     filename = f"leave_requests_{timezone.now().date()}.xlsx"
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = f'attachment; filename=\"{filename}\"'
     wb.save(response)
     return response
+
 
 @user_passes_test(is_ceo)
 def ceo_dashboard(request):
@@ -484,7 +565,7 @@ def ceo_dashboard(request):
 
     monthly_labels = [item["month"].strftime("%b") for item in monthly_qs]
     monthly_counts = [item["count"] for item in monthly_qs]
-    
+
     dept_qs = qs_year.values(
         "employee__department__name"
     ).annotate(
@@ -505,13 +586,6 @@ def ceo_dashboard(request):
     leave_type_labels = [item["leave_type__name"] for item in type_qs]
     leave_type_counts = [item["count"] for item in type_qs]
 
-    monthly_labels_json = json.dumps(monthly_labels)
-    monthly_counts_json = json.dumps(monthly_counts)
-    department_labels_json = json.dumps(department_labels)
-    department_counts_json = json.dumps(department_counts)
-    leave_type_labels_json = json.dumps(leave_type_labels)
-    leave_type_counts_json = json.dumps(leave_type_counts)
-
     context = {
         "year": year,
         "total_employees": total_employees,
@@ -520,21 +594,11 @@ def ceo_dashboard(request):
         "approved_count": approved_count,
         "rejected_count": rejected_count,
         "cancelled_count": cancelled_count,
-
-        # ตัวเลข + labels เดิมถ้าจะใช้ที่อื่น
-        "monthly_labels": monthly_labels,
-        "monthly_counts": monthly_counts,
-        "department_labels": department_labels,
-        "department_counts": department_counts,
-        "leave_type_labels": leave_type_labels,
-        "leave_type_counts": leave_type_counts,
-
-        # สำหรับใช้ใน JS
-        "monthly_labels_json": monthly_labels_json,
-        "monthly_counts_json": monthly_counts_json,
-        "department_labels_json": department_labels_json,
-        "department_counts_json": department_counts_json,
-        "leave_type_labels_json": leave_type_labels_json,
-        "leave_type_counts_json": leave_type_counts_json,
+        "monthly_labels_json": json.dumps(monthly_labels),
+        "monthly_counts_json": json.dumps(monthly_counts),
+        "department_labels_json": json.dumps(department_labels),
+        "department_counts_json": json.dumps(department_counts),
+        "leave_type_labels_json": json.dumps(leave_type_labels),
+        "leave_type_counts_json": json.dumps(leave_type_counts),
     }
     return render(request, "leave_app/ceo_dashboard.html", context)
