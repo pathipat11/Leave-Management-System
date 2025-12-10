@@ -2,7 +2,7 @@
 
 A complete **Leave Management System** built with **Django** and **Tailwind CSS**, designed to handle employee leave workflows in a real-world organization.
 
-This project supports multiple roles (Employee, Manager, HR, CEO), leave validation, quota management, approval workflows, email notifications, and reporting.
+This project supports multiple roles (**Employee, Manager, HR, CEO**), leave validation, quota management, approval workflows, email notifications, and reporting.
 
 ---
 
@@ -22,6 +22,8 @@ This project supports multiple roles (Employee, Manager, HR, CEO), leave validat
 * Cancel pending leave requests
 * Reset password via email
 
+---
+
 ### 👔 Manager
 
 * View pending leave requests from direct subordinates
@@ -29,6 +31,8 @@ This project supports multiple roles (Employee, Manager, HR, CEO), leave validat
 * Add approval comments
 * Automatic quota deduction upon approval
 * View approval history
+
+---
 
 ### 🧑‍💼 HR
 
@@ -39,6 +43,8 @@ This project supports multiple roles (Employee, Manager, HR, CEO), leave validat
 * Enable / disable user accounts
 * Manage leave quotas per employee and year
 * Manage departments and leave types
+
+---
 
 ### 🧑‍💻 CEO
 
@@ -96,7 +102,6 @@ Leave-Management-System/
 ├── config/                 # Django project settings
 ├── leave_app/              # Main application
 │   ├── models.py
-│   ├── templates/          # Global auth templates
 │   ├── views.py
 │   ├── services.py
 │   ├── forms.py
@@ -116,7 +121,7 @@ Leave-Management-System/
 ## ⚙️ Tech Stack
 
 * **Backend:** Django 5
-* **Frontend:** Django Templates + Tailwind CSS
+* **Frontend:** Django Templates + Tailwind CSS (CDN)
 * **Database:** PostgreSQL
 * **Auth:** Django Authentication
 * **Email:** SMTP (Gmail App Password)
@@ -129,7 +134,7 @@ Leave-Management-System/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/Leave-Management-System.git
+git clone https://github.com/pathipat11/Leave-Management-System.git
 cd Leave-Management-System
 ```
 
@@ -147,7 +152,9 @@ source venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-### 4. Environment variables
+---
+
+## ⚙️ Environment Variables
 
 Create a `.env` file in the project root:
 
@@ -166,6 +173,7 @@ EMAIL_HOST_PASSWORD=your_gmail_app_password
 ```
 
 > ⚠️ For Gmail, you **must use an App Password**, not your normal email password.
+
 ---
 
 ## 🗄 Database Setup
@@ -177,26 +185,16 @@ python manage.py createsuperuser
 
 ---
 
-## 📦 Load Initial Data (Fixtures)
+## 📦 Initial Data (Fixtures)
 
-Fixtures make it easy to move machines or reset environments.
-
-### Create fixture directory
+Fixtures help initialize departments and leave types easily.
 
 ```bash
 mkdir leave_app/fixtures
-```
 
-### Dump data
-
-```bash
 python manage.py dumpdata leave_app.Department leave_app.LeaveType \
   --indent 2 > leave_app/fixtures/initial_data.json
-```
 
-### Load data
-
-```bash
 python manage.py loaddata leave_app/fixtures/initial_data.json
 ```
 
@@ -214,49 +212,38 @@ Open: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 ## 🎨 Frontend Styling (Tailwind CSS)
 
-This project uses **Tailwind CSS** for styling the UI.
-
-Tailwind is applied directly inside Django templates using utility classes.
-No Node.js or build pipeline is required.
-
-### Setup
-
-Tailwind CSS is loaded via **CDN** and included in the base template.
-
-Example (`base.html`):
+This project uses **Tailwind CSS via CDN** for simplicity.
 
 ```html
 <script src="https://cdn.tailwindcss.com"></script>
 ```
 
-This approach is lightweight and ideal for development or small-to-medium projects.
-
-> ⚠️ Note: For large-scale production environments, a build-based Tailwind setup is recommended.
+> ✅ Suitable for development and internal systems
+> ⚠️ For production-scale systems, a build-based Tailwind setup is recommended
 
 ---
 
 ## 🔐 Authentication & Roles
 
-Roles are assigned using Django Groups:
+Roles are managed using **Django Groups**:
 
-* **Employee** (default user)
-* **Manager** (Group: `MANAGER`)
-* **HR** (Group: `HR` or `is_staff`)
-* **CEO** (Group: `CEO`)
+* Employee (default)
+* Manager → `MANAGER`
+* HR → `HR` or `is_staff=True`
+* CEO → `CEO`
 
-Access control is handled via Django decorators such as:
+Access control is enforced using:
 
 * `@login_required`
 * `@user_passes_test`
-
 
 ---
 
 ## ✉️ Email & Password Reset
 
-* Password reset uses Django auth URLs
+* Password reset uses Django authentication URLs
 * Emails are sent via SMTP
-* During development, you can use console backend:
+* Development option (console output):
 
 ```python
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
@@ -267,41 +254,42 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 ## 🧪 Usage Flow
 
 1. HR creates or imports employees
-2. Leave balances are auto-created
+2. System initializes leave balances
 3. Employee submits leave request
-4. Manager approves / rejects
-5. System deducts quota and sends email
-6. HR and CEO can view reports and dashboards
+4. Manager reviews and approves/rejects
+5. System deducts quota and sends notification
+6. HR and CEO review reports and dashboards
 
 ---
 
 ## 🔮 Future Improvements
 
-* Public holidays management UI
-* Slack / LINE notification
+* Holiday management UI
 * Multi-level approval
 * Carry-over leave rules
 * REST API + React frontend
-* Docker support
+* Docker deployment
 
 ---
 
 ## ✅ Project Status
 
 ✅ Core leave workflow complete
-✅ Email notifications enabled
-✅ Role-based access implemented
-✅ Production-ready architecture
+✅ Role-based access control
+✅ Email notification system
+✅ Ready for real-world use and extension
+
+---
+
+## 👤 Author
+
+**Pathipat Mattra**
+📧 Email: [pathipat.mattra@gmail.com](mailto:pathipat.mattra@gmail.com)
+🔗 GitHub: [https://github.com/pathipat11/Leave-Management-System.git](https://github.com/pathipat11/Leave-Management-System.git)
 
 ---
 
 ## 📄 License
 
-This project is for educational and internal use.
-You are free to modify and extend it.
-
----
-
-## 🙌 Author
-
-Developed by **Pathipat Mattra**
+This project is intended for **educational and internal use**.
+You are free to modify, extend, and adapt it to your needs.
