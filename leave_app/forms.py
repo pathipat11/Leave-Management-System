@@ -1,10 +1,9 @@
 from django import forms
-from .models import LeaveRequest, Department, LeaveBalance
+from .models import LeaveRequest, Department, LeaveBalance, EmployeeProfile
 from .services import validate_leave_request
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
-
 
 class HREmployeeCreateForm(forms.Form):
     username = forms.CharField(label="Username", max_length=150)
@@ -80,6 +79,7 @@ class LeaveRequestForm(forms.ModelForm):
                 start_date,
                 end_date,
                 half_day,
+                instance=self.instance,
             )
 
         return cleaned
@@ -96,13 +96,6 @@ class LeaveBalanceForm(forms.ModelForm):
                 attrs={"step": "0.5", "class": "border p-2 rounded w-full text-sm"}
             ),
         }
-from django import forms
-from .models import LeaveRequest, Department, LeaveBalance, EmployeeProfile
-from .services import validate_leave_request
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-
 
 class HREmployeeCreateForm(forms.Form):
     username = forms.CharField(label="Username", max_length=150)

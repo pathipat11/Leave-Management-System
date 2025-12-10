@@ -3,20 +3,21 @@ from django.utils import timezone
 from datetime import timedelta
 from django.core.mail import send_mail
 from django.conf import settings
+from decimal import Decimal
+
 
 from .models import LeaveRequest, LeaveBalance, Holiday, LeaveType, EmployeeProfile
 
 def calculate_working_days(start_date, end_date, half_day=False):
     """คำนวณวันทำงานระหว่างช่วงวันที่ (ตัดเสาร์อาทิตย์ + Holiday)"""
     if half_day:
-        return 0.5
+        return Decimal("0.5")
 
-    days = 0
+    days = Decimal("0")
     current = start_date
     while current <= end_date:
-        # weekday 0-4 = จันทร์-ศุกร์
         if current.weekday() < 5 and not Holiday.objects.filter(date=current).exists():
-            days += 1
+            days += Decimal("1")
         current += timedelta(days=1)
     return days
 
@@ -30,25 +31,25 @@ def calculate_working_days_by_year(start_date, end_date, half_day=False):
     if half_day:
         if start_date != end_date:
             raise ValidationError("ถ้าลาครึ่งวันต้องเป็นวันเดียวกันทั้งวันเริ่มและสิ้นสุด")
-        return {start_date.year: 0.5}
+        return {start_date.year: Decimal("0.5")}
 
-    days_by_year = {}
+    days_by_year: dict[int, Decimal] = {}
     current = start_date
     while current <= end_date:
         if current.weekday() < 5 and not Holiday.objects.filter(date=current).exists():
             year = current.year
-            days_by_year.setdefault(year, 0)
-            days_by_year[year] += 1
+            if year not in days_by_year:
+                days_by_year[year] = Decimal("0")
+            days_by_year[year] += Decimal("1")
         current += timedelta(days=1)
     return days_by_year
 
 
-def validate_leave_request(employee_profile, leave_type, start_date, end_date, half_day=False):
+def validate_leave_request(employee_profile, leave_type, start_date, end_date, half_day=False, instance: LeaveRequest | None = None):
     # 1) เช็กช่วงวันที่
     if end_date < start_date:
         raise ValidationError("End date must be after start date.")
 
-    # (ถ้าไม่อยากห้ามย้อนหลัง comment บรรทัดนี้ทิ้งได้)
     if start_date < timezone.now().date():
         raise ValidationError("Cannot request leave in the past.")
 
@@ -57,13 +58,18 @@ def validate_leave_request(employee_profile, leave_type, start_date, end_date, h
         raise ValidationError("ประเภทการลานี้ไม่สามารถลาครึ่งวันได้")
 
     # 3) เช็กซ้อนช่วงลาเดิม (pending / approved)
-    overlap = LeaveRequest.objects.filter(
+    overlap_qs = LeaveRequest.objects.filter(
         employee=employee_profile,
         status__in=[LeaveRequest.STATUS_PENDING, LeaveRequest.STATUS_APPROVED],
         start_date__lte=end_date,
         end_date__gte=start_date,
-    ).exists()
-    if overlap:
+    )
+
+    # 👇 ถ้ามี instance (เช่น ตอน approve ใบนี้เอง) ให้ตัดตัวมันออกจาก query
+    if instance is not None:
+        overlap_qs = overlap_qs.exclude(pk=instance.pk)
+
+    if overlap_qs.exists():
         raise ValidationError("Leave request overlaps with existing leave.")
 
     # 4) คำนวณจำนวนวันลา (แยกตามปี)
@@ -71,7 +77,6 @@ def validate_leave_request(employee_profile, leave_type, start_date, end_date, h
 
     # 5) ถ้าเป็นลาแบบไม่จ่ายเงิน (UNPAID) ไม่ต้องเช็กโควต้า
     if not leave_type.is_paid:
-        # คืนจำนวนวันรวม (ใช้ตอนแสดงผลถ้าต้องการ)
         return sum(days_by_year.values())
 
     # 6) เช็กโควต้าต่อปี
@@ -93,7 +98,6 @@ def validate_leave_request(employee_profile, leave_type, start_date, end_date, h
                 f"(remaining {balance.remaining}, requested {days})"
             )
 
-    # จำนวนวันรวมทั้งหมด (ทุกปีรวมกัน)
     return sum(days_by_year.values())
 
 
@@ -119,6 +123,7 @@ def approve_leave_request(leave_request: LeaveRequest, approver, comment: str = 
         leave_request.start_date,
         leave_request.end_date,
         leave_request.half_day,
+        instance=leave_request,
     )
 
     # คำนวณวันลาต่อปี (ใช้ฟังก์ชันใหม่)
