@@ -4,12 +4,21 @@
 {% block title %}HR - พนักงานทั้งหมด{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-semibold tracking-tight mb-2">
-    พนักงานทั้งหมด
-</h1>
-<p class="mb-4 text-sm text-slate-500 dark:text-slate-400">
-    HR สามารถค้นหา / กรอง และเข้าไปแก้ไขข้อมูลพนักงานแต่ละคนได้จากหน้านี้
-</p>
+<div class="flex items-center justify-between mb-2">
+    <div>
+        <h1 class="text-2xl font-semibold tracking-tight">
+            พนักงานทั้งหมด
+        </h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+            HR สามารถค้นหา / กรอง และเข้าไปแก้ไขข้อมูลพนักงานแต่ละคนได้จากหน้านี้
+        </p>
+    </div>
+
+    <a href="{% url 'leave_app:hr_leave_dashboard' %}" class="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+        ← กลับหน้า HR Dashboard
+    </a>
+</div>
+
 
 <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
     <div class="text-sm text-slate-500 dark:text-slate-400">
