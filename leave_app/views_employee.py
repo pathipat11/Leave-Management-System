@@ -51,7 +51,7 @@ def leave_request_create(request):
             leave.employee = employee
             leave.save()
             messages.success(request, "ส่งคำขอลาเรียบร้อยแล้ว")
-            return redirect("leave_app:my_leaves")
+            return redirect("leave_app:leave_request_list")
     else:
         form = LeaveRequestForm(employee_profile=employee)
 

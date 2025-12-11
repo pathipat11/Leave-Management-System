@@ -14,6 +14,7 @@
       <th class="text-left py-2 px-3">พนักงาน</th>
       <th class="text-left px-3">ประเภท</th>
       <th class="text-left px-3">ช่วงเวลา</th>
+      <th class="text-left px-3">ไฟล์แนบ</th>
       <th class="text-left px-3">เหตุผล</th>
       <th class="text-left px-3">จัดการ</th>
     </tr>
@@ -30,6 +31,16 @@
         {% if leave.half_day %}
           <span class="ml-1 text-xs text-indigo-600 dark:text-indigo-400">(ครึ่งวัน)</span>
         {% endif %}
+      </td>
+      <td class="px-3">
+          {% if leave.attachment %}
+              <a href="{{ leave.attachment.url }}" target="_blank"
+              class="text-xs text-indigo-600 hover:text-indigo-500 dark:text-indigo-300">
+                  ดูไฟล์
+              </a>
+          {% else %}
+              <span class="text-xs text-slate-400 dark:text-slate-500">-</span>
+          {% endif %}
       </td>
       <td class="px-3 truncate max-w-xs">
         {{ leave.reason|truncatechars:50 }}
